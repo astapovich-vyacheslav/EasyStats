@@ -16,6 +16,7 @@ using std::vector;
 
 //Prototypes
 LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
+LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 WNDCLASS NewWindowClass(HBRUSH bgColor, HCURSOR cursor, HINSTANCE hInst, HICON icon, LPCWSTR name, WNDPROC procedure);
 void LoadDoublesData(LPCSTR path, vector<double>* data);
 void PaintGraphicsArea(HWND hWnd);
@@ -26,9 +27,16 @@ void DrawDistribution(HWND hWnd);
 vector<double> GetDensity();
 void DrawDensity(HWND hWnd);
 BOOL WINAPI GetExpectedValue();
+BOOL WINAPI GetDispersion();
+BOOL WINAPI GetMedian();
+BOOL WINAPI GetMode();
+void CreateReportWin();
+void FillEdit();
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
+HWND hWndR;
+HINSTANCE hInstance;
 
 //WinMain
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR args, int ncmdshow) {
@@ -42,6 +50,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR args, int ncmdsho
 	CreateWindow(L"MainWndClass", L"EasyStats", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 1200, 650, NULL, NULL, NULL, NULL);
 	canDrawGraphics = false;
 	canDrawCoordPlane = true;
+	RegisterReportWinClass();
 	while (GetMessage(&SoftwareMainMessage, NULL, NULL, NULL)) {
 		TranslateMessage(&SoftwareMainMessage);
 		DispatchMessage(&SoftwareMainMessage);
@@ -94,8 +103,14 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 			break;
 		case OnReportButtonClicked: {
 				std::thread getM(GetExpectedValue);
+				std::thread getD(GetDispersion);
+				std::thread getMedian(GetMedian);
+				std::thread getMode(GetMode);
 				getM.join();
-				double test = M;
+				getD.join();
+				getMedian.join();
+				getMode.join();
+				CreateReportWin();
 			}
 			break;
 		default:
@@ -131,8 +146,6 @@ void MainAddWidgets(HWND hWnd) {
 	//Label
 	//CreateWindowA("static", "This is LABEL!", WS_VISIBLE | WS_CHILD, 5, 5, 490, 20, hWnd, NULL, NULL, NULL);
 
-	//Edit
-	//hEditControl = CreateWindowA("edit", "This is EDIT!", WS_VISIBLE | WS_CHILD | ES_MULTILINE | WS_VSCROLL, 5, 30, 490, 200, hWnd, NULL, NULL, NULL);
 
 	//Edit
 	CreateWindowA("button", "Открыть файл с данными", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 500, 200, 60, hWnd, (HMENU)OnButtonClicked, NULL, NULL);
@@ -348,7 +361,7 @@ vector<double> GetDensity() {
 	delta = max - min;
 	h = delta / data.size();
 	argument = min + h;
-	for (int i = 0; i < size - 1 && argument <= max; argument += h)
+	for (int i = 1; i < size && argument <= max; argument += h)
 	{
 		int j = 0;
 		while (data[i] < argument) {
@@ -405,4 +418,125 @@ BOOL WINAPI GetExpectedValue() {
 	mutex.unlock();
 	M = total / count;
 	return true;
+}
+
+BOOL WINAPI GetDispersion() {
+	mutex.lock();
+	int count = data.size();
+	double total1 = 0;
+	double total2 = 0;
+	for (int i = 0; i < count; i++) {
+		total1 += data[i] * data[i];
+		total2 += data[i];
+	}
+	mutex.unlock();
+	D = total1 / count - (total2 * total2 / (count * count));
+	standartDeviation = sqrt(D);
+	return true;
+}
+
+BOOL WINAPI GetMedian() {
+	mutex.lock();
+	int count = data.size();
+	double diff1 = 0.5;
+	double diff2 = 0.5;
+	for (int i = 1; i < count; i++) {
+		diff1 = abs(0.5 - distribution[i]);
+		if (diff1 > diff2) {
+			median = data[i - 1];
+			break;
+		}
+		diff2 = diff1;
+	}
+	mutex.unlock();
+	return true;
+}
+
+BOOL WINAPI GetMode() {
+	mutex.lock();
+	int count = data.size();
+	double maxValue = 0;
+	int ind = 0;
+	for (int i = 1; i < count; i++) {
+		if (density[i - 1] > maxValue) {
+			maxValue = density[i - 1];
+			ind = i;
+		}
+	}
+	mutex.unlock();
+	mode = data[ind];
+	return true;
+}
+
+void CreateReportWin() {
+	hWndR = CreateWindowEx(0, L"ReportWindowClass", L"Отчет о характеристиках", WS_OVERLAPPEDWINDOW | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CHILD,
+		200, 300, 400, 480, NULL, NULL, hInstance, NULL);
+
+	EnableWindow(hWndR, TRUE);
+	ShowWindow(hWndR, SW_SHOWDEFAULT);
+	UpdateWindow(hWndR);
+}
+
+void RegisterReportWinClass() { //окно шифрования/дешифрования
+
+	WNDCLASSEX wcexed;
+	memset(&wcexed, 0, sizeof(wcexed));
+	wcexed.cbSize = sizeof(WNDCLASSEX);
+	wcexed.style = CS_HREDRAW | CS_VREDRAW;
+	wcexed.lpfnWndProc = ReportWinProc;
+	//wcexed.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_KURSACH1));
+	wcexed.hInstance = hInstance;
+	//wcexed.hbrBackground = CreatePatternBrush(hBitmapED);
+	wcexed.lpszClassName = L"ReportWindowClass";
+	RegisterClassEx(&wcexed);
+}
+
+LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
+	switch (msg) {
+	case WM_COMMAND:
+		switch (wp)
+		{
+		
+		default:
+			break;
+		}
+		break;
+	case WM_CREATE:
+		//Edit
+		hEditControl = CreateWindowA("edit", "", WS_VISIBLE | WS_CHILD | ES_MULTILINE | WS_VSCROLL, 5, 30, 490, 200, hWnd, NULL, NULL, NULL);
+		//Buttton
+		CreateWindowA("button", "Сохранить отчет", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 500, 200, 60, hWnd, (HMENU)OnSaveReportButtonClicked, NULL, NULL);
+
+		FillEdit();
+		break;
+	case WM_PAINT:
+		break;
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		break;
+	default: return DefWindowProc(hWnd, msg, wp, lp);
+	}
+}
+
+void FillEdit() {
+	std::string str;
+	str.append("Матожидание:\r\n");
+	std::string MStr = std::to_string(M);
+	str.append(MStr);
+	str.append("\r\n\r\nДисперсия:\r\n");
+	std::string DStr = std::to_string(D);
+	str.append(DStr);
+	str.append("\r\n\r\nСреднеквадратическое отклонение:\r\n");
+	std::string SDStr = std::to_string(standartDeviation);
+	str.append(SDStr);
+	str.append("\r\n\r\nМедиана:\r\n");
+	std::string MedianStr = std::to_string(median);
+	str.append(MedianStr);
+	str.append("\r\n\r\nМода:\r\n");
+	std::string ModeStr = std::to_string(mode);
+	str.append(ModeStr);
+	char output[300] = { 0 };
+	for (int i = 0; i <= str.length(); i++)	//Use <= to add '\0'
+		output[i] = str[i];
+	SetWindowTextA(hEditControl, output);
 }

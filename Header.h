@@ -5,6 +5,7 @@
 
 #define OnButtonClicked	1
 #define OnReportButtonClicked 2
+#define OnSaveReportButtonClicked	4
 
 #define TextBufferSize	65536
 
@@ -35,6 +36,7 @@ std::mutex mutex;
 //Prototypes
 LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 WNDCLASS NewWindowClass(HBRUSH bgColor, HCURSOR cursor, HINSTANCE hInst, HICON icon, LPCWSTR name, WNDPROC procedure);
+void RegisterReportWinClass();
 void SetOpenFileParams(HWND hWnd);
 void MainAddWidgets(HWND hWnd);
 void LoadDoublesData(LPCSTR path, vector<double>* data);
@@ -46,3 +48,8 @@ void DrawDistribution(HWND hWnd);
 vector<double> GetDensity();
 void DrawDensity(HWND hWnd);
 BOOL WINAPI GetExpectedValue();
+BOOL WINAPI GetDispersion();
+BOOL WINAPI GetMedian();
+BOOL WINAPI GetMode();
+void CreateReportWin();
+void FillEdit();

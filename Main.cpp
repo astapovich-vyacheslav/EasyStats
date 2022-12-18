@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
+#include <thread>
 #include "Header.h"
 
 #define GRID_SIZE 10
@@ -24,6 +25,7 @@ vector<double> GetDistribution();
 void DrawDistribution(HWND hWnd);
 vector<double> GetDensity();
 void DrawDensity(HWND hWnd);
+BOOL WINAPI GetExpectedValue();
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
@@ -90,6 +92,12 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 
 			}
 			break;
+		case OnReportButtonClicked: {
+				std::thread getM(GetExpectedValue);
+				getM.join();
+				double test = M;
+			}
+			break;
 		default:
 			break;
 		}
@@ -128,6 +136,8 @@ void MainAddWidgets(HWND hWnd) {
 
 	//Edit
 	CreateWindowA("button", "Открыть файл с данными", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 500, 200, 60, hWnd, (HMENU)OnButtonClicked, NULL, NULL);
+
+	CreateWindowA("button", "Отчет о характеристиках", WS_VISIBLE | WS_CHILD | ES_CENTER, 300, 500, 200, 60, hWnd, (HMENU)OnReportButtonClicked, NULL, NULL);
 }
 
 
@@ -216,7 +226,7 @@ void PaintGraphicsArea(HWND hWnd)
 
 	rc1.right -= (rcWindow.right - rcWindow.left) / 2;
 	rc1.bottom -= (rcWindow.bottom - rcWindow.top) / 2;
-
+	
 	rc2.left = rc1.right;
 	rc2.bottom = rc1.bottom;
 
@@ -224,6 +234,9 @@ void PaintGraphicsArea(HWND hWnd)
 	// they don't butt up right next to each other and we can distinguish them.
 	InflateRect(&rc1, -5, -5);
 	InflateRect(&rc2, -5, -5);
+
+	rc1.top += 100;
+	rc2.top += 100;
 
 	// Draw (differently-colored) borders around these rectangles.
 	SetDCPenColor(hDC, RGB(0, 0, 0));    // black
@@ -244,11 +257,17 @@ void PaintGraphicsArea(HWND hWnd)
 
 	
 	//// Draw the text into the center of each of the rectangles.
-	//SetBkMode(hDC, TRANSPARENT);
-	//SetBkColor(hDC, RGB(255, 255, 255));   // white
-	//// TODO: Optionally, set a nicer font than the default.
-	//DrawText(hDC, TEXT("Hello World!"), -1, &rc1, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
-	//DrawText(hDC, TEXT("Hello World!"), -1, &rc2, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+	SetBkMode(hDC, TRANSPARENT);
+	SetBkColor(hDC, RGB(255, 255, 255));   // white
+	// TODO: Optionally, set a nicer font than the default.
+	RECT rcDistributionText = rc1;
+	rcDistributionText.top = rcWindow.top;
+	rcDistributionText.bottom = rc1.top;
+	RECT rcDensityText = rc2;
+	rcDensityText.top = rcWindow.top;
+	rcDensityText.bottom = rc2.top;
+	DrawText(hDC, TEXT("Функция распределения:"), -1, &rcDistributionText, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+	DrawText(hDC, TEXT("Функция плотности:"), -1, &rcDensityText, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
 	// Clean up after ourselves.
 	SelectObject(hDC, hpenOld);
@@ -308,7 +327,8 @@ void DrawDistribution(HWND hWnd) {
 	MoveToEx(hDC, rc1.left, YToCoord(0, rc1, 1), NULL);
 	LineTo(hDC, XToCoord(min, rc1, transformation), YToCoord(0, rc1, 1));
 	//Draw middle
-	for (int i = 0; i < distribution.size(); i++) {
+	for (int i = 1; i < distribution.size(); i++) {
+		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i - 1], rc1, 1));
 		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i], rc1, 1));
 	}
 	//Draw to +inf
@@ -359,7 +379,8 @@ void DrawDensity(HWND hWnd) {
 	MoveToEx(hDC, rc2.left, YToCoord(0, rc2, 20), NULL);
 	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(0, rc2, 20));
 	//Draw middle
-	for (int i = 0; i < density.size(); i++) {
+	for (int i = 1; i < density.size(); i++) {
+		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i - 1], rc2, 20));
 		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i], rc2, 20));
 	}
 	//Draw to +inf
@@ -370,4 +391,18 @@ void DrawDensity(HWND hWnd) {
 	SelectObject(hDC, hbrushOld);
 	DeleteObject(graphPen);
 	EndPaint(hWnd, &ps);
+}
+
+
+//Calculating characteristics
+BOOL WINAPI GetExpectedValue() {
+	mutex.lock();
+	int count = data.size();
+	double total = 0;
+	for (int i = 0; i < count; i++) {
+		total += data[i];
+	}
+	mutex.unlock();
+	M = total / count;
+	return true;
 }

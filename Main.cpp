@@ -24,6 +24,7 @@ vector<double> GetDistribution();
 void DrawDistribution(HWND hWnd);
 //vars
 bool canDrawGraphics;
+bool canDrawCoordPlane;
 
 //WinMain
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR args, int ncmdshow) {
@@ -35,7 +36,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR args, int ncmdsho
 	MSG SoftwareMainMessage = { 0 };
 
 	CreateWindow(L"MainWndClass", L"EasyStats", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 1200, 650, NULL, NULL, NULL, NULL);
-
+	canDrawGraphics = false;
+	canDrawCoordPlane = true;
 	while (GetMessage(&SoftwareMainMessage, NULL, NULL, NULL)) {
 		TranslateMessage(&SoftwareMainMessage);
 		DispatchMessage(&SoftwareMainMessage);
@@ -91,12 +93,16 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 	case WM_CREATE:
 		MainAddWidgets(hWnd);
 		SetOpenFileParams(hWnd);
-		canDrawGraphics = false;
 		break;
 	case WM_PAINT:
-		PaintGraphicsArea(hWnd);
-		if (canDrawGraphics)
+		if (canDrawCoordPlane) {
+			PaintGraphicsArea(hWnd);
+			canDrawCoordPlane = false;
+		}
+		if (canDrawGraphics) {
 			DrawDistribution(hWnd);
+			canDrawGraphics = false;
+		}
 		break;
 	case WM_DESTROY:
 		PostQuitMessage(0);
@@ -262,18 +268,19 @@ vector<double> GetDistribution() {
 	return *result;
 }
 
-int XToCoord(double x, RECT rc) {
+int XToCoord(double x, RECT rc, double transformation) {
 	//min, delta - globals
 	//range, left - from form
 	int range = (rc.right - rc.left) * (GRID_SIZE - 2) / GRID_SIZE;
 	int left = rc.left + (rc.right - rc.left) / GRID_SIZE;
-	return left + range * (x - min) / delta;
+	int offset = range * transformation;
+	return left + (range - offset) * (x - min) / delta + offset;
 	//return 0;
 }
 
 int YToCoord(double y, RECT rc) {
 	int result = rc.bottom - 2 * (rc.bottom - rc.top) / GRID_SIZE;
-	result += y * 5 * (rc.bottom - rc.top) / GRID_SIZE;
+	result -= y * 5 * (rc.bottom - rc.top) / GRID_SIZE;
 	return result;
 }
 
@@ -283,14 +290,24 @@ void DrawDistribution(HWND hWnd) {
 	HPEN hpenOld = static_cast<HPEN>(SelectObject(hDC, GetStockObject(DC_PEN)));
 	HBRUSH hbrushOld = static_cast<HBRUSH>(SelectObject(hDC, GetStockObject(NULL_BRUSH)));
 	HPEN graphPen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
+	SelectObject(hDC, graphPen);
 
 	double extremeValue = max > abs(min) ? max : abs(min);
-	double range = 2 * extremeValue;
-	double growthPoint = max - abs(min);
-	MoveToEx(hDC, XToCoord(min, rc1), YToCoord(0, rc1), NULL);
-	MoveToEx(hDC, 0, 0, NULL);
-	LineTo(hDC, 500, 500);
+	double xRange = 2 * extremeValue;
+	double transformation = 1 - delta / xRange;
+
+	//Draw from -inf
+	MoveToEx(hDC, rc1.left, YToCoord(0, rc1), NULL);
+	LineTo(hDC, XToCoord(min, rc1, transformation), YToCoord(0, rc1));
+	//Draw middle
 	for (int i = 0; i < distribution.size(); i++) {
-		LineTo(hDC, XToCoord(min + h * i, rc1), YToCoord(distribution[i], rc1));
+		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i], rc1));
 	}
+	//Draw to +inf
+	LineTo(hDC, rc1.right, YToCoord(1, rc1));
+
+	DeleteObject(graphPen);
+	SelectObject(hDC, hpenOld);
+	SelectObject(hDC, hbrushOld);
+	EndPaint(hWnd, &ps);
 }

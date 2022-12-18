@@ -53,3 +53,4 @@ BOOL WINAPI GetMedian();
 BOOL WINAPI GetMode();
 void CreateReportWin();
 void FillEdit();
+void SaveData(LPCSTR path);

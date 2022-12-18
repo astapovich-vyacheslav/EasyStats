@@ -32,6 +32,7 @@ BOOL WINAPI GetMedian();
 BOOL WINAPI GetMode();
 void CreateReportWin();
 void FillEdit();
+void SaveData(LPCSTR path);
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
@@ -470,7 +471,7 @@ BOOL WINAPI GetMode() {
 
 void CreateReportWin() {
 	hWndR = CreateWindowEx(0, L"ReportWindowClass", L"Отчет о характеристиках", WS_OVERLAPPEDWINDOW | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CHILD,
-		200, 300, 400, 480, NULL, NULL, hInstance, NULL);
+		200, 300, 500, 500, NULL, NULL, hInstance, NULL);
 
 	EnableWindow(hWndR, TRUE);
 	ShowWindow(hWndR, SW_SHOWDEFAULT);
@@ -496,7 +497,10 @@ LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	case WM_COMMAND:
 		switch (wp)
 		{
-		
+		case OnSaveReportButtonClicked:
+			if (GetSaveFileNameA(&ofn))
+				SaveData(filename);
+			break;
 		default:
 			break;
 		}
@@ -505,7 +509,7 @@ LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		//Edit
 		hEditControl = CreateWindowA("edit", "", WS_VISIBLE | WS_CHILD | ES_MULTILINE | WS_VSCROLL, 5, 30, 490, 200, hWnd, NULL, NULL, NULL);
 		//Buttton
-		CreateWindowA("button", "Сохранить отчет", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 500, 200, 60, hWnd, (HMENU)OnSaveReportButtonClicked, NULL, NULL);
+		CreateWindowA("button", "Сохранить отчет", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 300, 200, 60, hWnd, (HMENU)OnSaveReportButtonClicked, NULL, NULL);
 
 		FillEdit();
 		break;
@@ -539,4 +543,26 @@ void FillEdit() {
 	for (int i = 0; i <= str.length(); i++)	//Use <= to add '\0'
 		output[i] = str[i];
 	SetWindowTextA(hEditControl, output);
+}
+
+void SaveData(LPCSTR path) {
+	HANDLE FileToSave = CreateFileA(
+		path,
+		GENERIC_WRITE,
+		0,
+		NULL,
+		CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		NULL);
+
+	int saveLenth = GetWindowTextLength(hEditControl) + 1;
+	char* data = new char[saveLenth];
+
+	saveLenth = GetWindowTextA(hEditControl, data, saveLenth);
+
+	DWORD bytesIterated;
+	WriteFile(FileToSave, data, saveLenth, &bytesIterated, NULL);
+
+	CloseHandle(FileToSave);
+	delete[] data;
 }

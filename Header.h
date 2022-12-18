@@ -10,6 +10,7 @@ using std::vector;
 //vars
 vector<double> data;
 vector<double> distribution;
+vector<double> density;
 HWND hEditControl;
 OPENFILENAMEA ofn; 
 char filename[300];
@@ -32,3 +33,5 @@ void DrawGrid(HDC hDC, RECT rc);
 void DrawAxises(HDC hDC, RECT rc);
 vector<double> GetDistribution();
 void DrawDistribution(HWND hWnd);
+vector<double> GetDensity();
+void DrawDensity(HWND hWnd);

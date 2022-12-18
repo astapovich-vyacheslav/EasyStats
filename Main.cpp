@@ -22,6 +22,8 @@ void DrawGrid(HDC hDC, RECT rc);
 void DrawAxises(HDC hDC, RECT rc);
 vector<double> GetDistribution();
 void DrawDistribution(HWND hWnd);
+vector<double> GetDensity();
+void DrawDensity(HWND hWnd);
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
@@ -80,8 +82,10 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 				//do calculations for distribution and density
 				std::sort(data.begin(), data.end());
 				distribution = GetDistribution();
+				density = GetDensity();
 				canDrawGraphics = true;
 
+				InvalidateRect(hWnd, 0, false);
 				//redraw graphics
 
 			}
@@ -95,13 +99,17 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 		SetOpenFileParams(hWnd);
 		break;
 	case WM_PAINT:
+		
+		if (canDrawGraphics) {
+			//PaintGraphicsArea(hWnd);
+			DrawDistribution(hWnd);
+			InvalidateRect(hWnd, 0, false);
+			DrawDensity(hWnd);
+			//canDrawGraphics = false;
+		}
 		if (canDrawCoordPlane) {
 			PaintGraphicsArea(hWnd);
-			canDrawCoordPlane = false;
-		}
-		if (canDrawGraphics) {
-			DrawDistribution(hWnd);
-			canDrawGraphics = false;
+			//canDrawCoordPlane = false;
 		}
 		break;
 	case WM_DESTROY:
@@ -200,7 +208,7 @@ void PaintGraphicsArea(HWND hWnd)
 	HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
 	HPEN gridPen = CreatePen(PS_SOLID, 1, RGB(220, 220, 220));
 
-	// Calculate the dimensions of the 4 equal rectangles.
+	// Calculate the dimensions of the 2 equal rectangles.
 	RECT rcWindow;
 	GetClientRect(hWnd, &rcWindow);
 
@@ -243,10 +251,10 @@ void PaintGraphicsArea(HWND hWnd)
 	//DrawText(hDC, TEXT("Hello World!"), -1, &rc2, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
 	// Clean up after ourselves.
-	DeleteObject(borderPen);
-	DeleteObject(brush);
 	SelectObject(hDC, hpenOld);
 	SelectObject(hDC, hbrushOld);
+	DeleteObject(borderPen);
+	DeleteObject(brush);
 	EndPaint(hWnd, &ps);
 }
 
@@ -278,9 +286,9 @@ int XToCoord(double x, RECT rc, double transformation) {
 	//return 0;
 }
 
-int YToCoord(double y, RECT rc) {
+int YToCoord(double y, RECT rc, int magnification) {
 	int result = rc.bottom - 2 * (rc.bottom - rc.top) / GRID_SIZE;
-	result -= y * 5 * (rc.bottom - rc.top) / GRID_SIZE;
+	result -= y * 5 * (rc.bottom - rc.top) * magnification / GRID_SIZE;
 	return result;
 }
 
@@ -297,17 +305,69 @@ void DrawDistribution(HWND hWnd) {
 	double transformation = 1 - delta / xRange;
 
 	//Draw from -inf
-	MoveToEx(hDC, rc1.left, YToCoord(0, rc1), NULL);
-	LineTo(hDC, XToCoord(min, rc1, transformation), YToCoord(0, rc1));
+	MoveToEx(hDC, rc1.left, YToCoord(0, rc1, 1), NULL);
+	LineTo(hDC, XToCoord(min, rc1, transformation), YToCoord(0, rc1, 1));
 	//Draw middle
 	for (int i = 0; i < distribution.size(); i++) {
-		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i], rc1));
+		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i], rc1, 1));
 	}
 	//Draw to +inf
-	LineTo(hDC, rc1.right, YToCoord(1, rc1));
+	LineTo(hDC, rc1.right, YToCoord(1, rc1, 1));
 
-	DeleteObject(graphPen);
 	SelectObject(hDC, hpenOld);
 	SelectObject(hDC, hbrushOld);
+	DeleteObject(graphPen);
+	EndPaint(hWnd, &ps);
+}
+
+vector<double> GetDensity() {
+	int size = data.size();
+	vector<double>* result = new vector<double>(0);
+	min = data[0];
+	max = data[data.size() - 1];
+	delta = max - min;
+	h = delta / data.size();
+	argument = min + h;
+	for (int i = 0; i < size - 1 && argument <= max; argument += h)
+	{
+		int j = 0;
+		while (data[i] < argument) {
+			i++;
+			j++;
+		}
+		double value = (double)j / size;
+		result->push_back(value);
+	}
+	return *result;
+}
+
+
+//TODO: calculate magnification
+void DrawDensity(HWND hWnd) {
+	PAINTSTRUCT ps;
+	HDC hDC = BeginPaint(hWnd, &ps);
+	HPEN hpenOld = static_cast<HPEN>(SelectObject(hDC, GetStockObject(DC_PEN)));
+	HBRUSH hbrushOld = static_cast<HBRUSH>(SelectObject(hDC, GetStockObject(NULL_BRUSH)));
+	HPEN graphPen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
+	SelectObject(hDC, graphPen);
+
+	double extremeValue = max > abs(min) ? max : abs(min);
+	double xRange = 2 * extremeValue;
+	double transformation = 1 - delta / xRange;
+
+	//Draw from -inf
+	MoveToEx(hDC, rc2.left, YToCoord(0, rc2, 20), NULL);
+	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(0, rc2, 20));
+	//Draw middle
+	for (int i = 0; i < density.size(); i++) {
+		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i], rc2, 20));
+	}
+	//Draw to +inf
+	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(0, rc2, 20));
+	LineTo(hDC, rc2.right, YToCoord(0, rc2, 20));
+
+	SelectObject(hDC, hpenOld);
+	SelectObject(hDC, hbrushOld);
+	DeleteObject(graphPen);
 	EndPaint(hWnd, &ps);
 }

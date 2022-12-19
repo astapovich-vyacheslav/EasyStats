@@ -422,6 +422,8 @@ vector<double> GetDistribution() {
 	max = data[data.size() - 1];
 	delta = max - min;
 	h = delta / data.size();
+	/*if (delta > 10 * data.size())
+		h = 1 / h;*/
 	argument = min;
 	/*if (delta == 0) {
 		result->push_back(1);
@@ -503,19 +505,19 @@ vector<double> GetDensity() {
 	max = data[data.size() - 1];
 	delta = max - min;
 	h = delta / data.size();
+	/*if (delta > 10 * data.size())
+		h = 1 / h;*/
 	argument = min + h;
 	/*if (delta == 0) {
 		result->push_back(1);
 		return *result;
 	}*/
 	maxDensityValue = 0;
-	for (int i = 0; i < size && argument <= max + 0.00001; argument += h)
+	for (int i = 0; i < size && argument <= max + 0.0001; argument += h)
 	{
 		int j = 0;
-		while (i < size && (data[i] <= argument + 0.00001 || h == 0)) {
+		while (i < size && (data[i] <= argument + 0.0001 || h == 0)) {
 			i++;
-			if (i == 98)
-				i += 0;
 			j++;
 		}
 		double value = (double)j / size;

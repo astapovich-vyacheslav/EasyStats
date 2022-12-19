@@ -74,3 +74,4 @@ void SaveData(LPCSTR path);
 char* StdStrToCharArr(std::string str);
 void DrawNumsOnPlane(HWND hWnd, RECT rc, double topValue);
 int XToCoord(double x, RECT rc, double transformation);
+int YToCoord(double y, RECT rc, int magnification);

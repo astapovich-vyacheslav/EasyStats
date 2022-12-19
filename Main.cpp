@@ -41,6 +41,7 @@ void SaveData(LPCSTR path);
 char* StdStrToCharArr(std::string str);
 void DrawNumsOnPlane(HWND hWnd, RECT rc, double topValue);
 int XToCoord(double x, RECT rc, double transformation);
+int YToCoord(double y, RECT rc, int magnification);
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
@@ -125,7 +126,7 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 				//do calculations for distribution and density
 				std::sort(data.begin(), data.end());
 				distribution = GetDistribution();
-				if (distribution.size() == 1) {
+				if (distribution.size() == 0) {
 					MessageBoxA(hWnd, "В выборке только одно значение", "Ошибка", MB_OK);
 					data.clear();
 					distribution.clear();

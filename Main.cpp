@@ -10,7 +10,7 @@
 #include <thread>
 #include "Header.h"
 
-#define GRID_SIZE 10
+
 
 using std::vector;
 
@@ -18,6 +18,7 @@ using std::vector;
 LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 WNDCLASS NewWindowClass(HBRUSH bgColor, HCURSOR cursor, HINSTANCE hInst, HICON icon, LPCWSTR name, WNDPROC procedure);
+void InitializeRects(HWND hWnd);
 void LoadDoublesData(LPCSTR path, vector<double>* data);
 void PaintGraphicsArea(HWND hWnd);
 void DrawGrid(HDC hDC, RECT rc);
@@ -33,9 +34,13 @@ BOOL WINAPI GetMode();
 BOOL WINAPI GetExcess();
 BOOL WINAPI GetAssymetry();
 BOOL WINAPI GetVarCoeff();
+void RegisterReportWinClass();
 void CreateReportWin(HWND hWnd);
 void FillEdit();
 void SaveData(LPCSTR path);
+char* StdStrToCharArr(std::string str);
+void DrawNumsOnPlane(HWND hWnd, RECT rc, double topValue);
+int XToCoord(double x, RECT rc, double transformation);
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
@@ -52,10 +57,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR args, int ncmdsho
 	if (!RegisterClassW(&MainClass)) { return -1; }
 	MSG SoftwareMainMessage = { 0 };
 
-	CreateWindow(L"MainWndClass", L"EasyStats", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 1200, 650, NULL, NULL, NULL, NULL);
+	CreateWindow(L"MainWndClass", L"EasyStats", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 50, 50, 1400, 700, NULL, NULL, NULL, NULL);
 	canDrawGraphics = false;
 	canDrawCoordPlane = true;
 	dataIsClear = true;
+
 	RegisterReportWinClass();
 	while (GetMessage(&SoftwareMainMessage, NULL, NULL, NULL)) {
 		TranslateMessage(&SoftwareMainMessage);
@@ -93,6 +99,18 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 					data.clear();
 					distribution.clear();
 					density.clear();
+					M = 0;
+					D = 0;
+					standartDeviation = 0;
+					median = 0;
+					medianLeft = 0;
+					medianRight = 0;
+					mode = 0;
+					modeLeft = 0;
+					modeRight = 0;
+					assymetry = 0;
+					excess = 0;
+					variationCoeff = 0;
 				}
 
 				//open file
@@ -101,20 +119,32 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 				}
 				catch (...) {
 					MessageBoxA(hWnd, "Не удалось открыть файл", "Ошибка", MB_OK);
+					data.clear();
 					return DefWindowProc(hWnd, msg, wp, lp);
 				}
 				//do calculations for distribution and density
 				std::sort(data.begin(), data.end());
 				distribution = GetDistribution();
+				if (distribution.size() == 1) {
+					MessageBoxA(hWnd, "В выборке только одно значение", "Ошибка", MB_OK);
+					data.clear();
+					distribution.clear();
+					return DefWindowProc(hWnd, msg, wp, lp);
+				}
 				density = GetDensity();
 				canDrawGraphics = true;
+				dataIsClear = false;
 				//redraw graphics
 				InvalidateRect(hWnd, 0, false);
 				//data is not clear
-				dataIsClear = false;
+				
 			}
 			break;
 		case OnReportButtonClicked: {
+			if (dataIsClear) {
+				MessageBoxA(hWnd, "Не выбраны начальные данные", "Ошибка", MB_OK);
+				return DefWindowProc(hWnd, msg, wp, lp);
+			}
 				std::thread getM(GetExpectedValue);
 				std::thread getD(GetDispersion);
 				std::thread getMedian(GetMedian);
@@ -137,23 +167,34 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 		}
 		break;
 	case WM_CREATE:
+		InitializeRects(hWnd);
 		MainAddWidgets(hWnd);
 		SetOpenFileParams(hWnd);
 		break;
 	case WM_PAINT:
-		
+		InitializeRects(hWnd);
+		DestroyWindow(hOpenButton);
+		DestroyWindow(hReportButton);
+		MainAddWidgets(hWnd);
 		if (canDrawGraphics) {
 			PaintGraphicsArea(hWnd);
 			InvalidateRect(hWnd, 0, false);
 			DrawDistribution(hWnd);
 			InvalidateRect(hWnd, 0, false);
 			DrawDensity(hWnd);
+			InvalidateRect(hWnd, 0, false);
+			DrawNumsOnPlane(hWnd, rc1, 1);
+			InvalidateRect(hWnd, 0, false);
+			DrawNumsOnPlane(hWnd, rc2, maxDensityValue);
 			//canDrawGraphics = false;
 		}
 		if (canDrawCoordPlane) {
 			PaintGraphicsArea(hWnd);
 			//canDrawCoordPlane = false;
 		}
+		break;
+	case WM_SIZE:
+		InvalidateRect(hWnd, 0, true);
 		break;
 	case WM_DESTROY:
 		PostQuitMessage(0);
@@ -163,16 +204,35 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 }
 
 void MainAddWidgets(HWND hWnd) {
-	//Label
-	//CreateWindowA("static", "This is LABEL!", WS_VISIBLE | WS_CHILD, 5, 5, 490, 20, hWnd, NULL, NULL, NULL);
-
-
-	//Edit
-	CreateWindowA("button", "Открыть файл с данными", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 500, 200, 60, hWnd, (HMENU)OnButtonClicked, NULL, NULL);
-
-	CreateWindowA("button", "Отчет о характеристиках", WS_VISIBLE | WS_CHILD | ES_CENTER, 300, 500, 200, 60, hWnd, (HMENU)OnReportButtonClicked, NULL, NULL);
+	hOpenButton = CreateWindowA("button", "Открыть файл с данными",
+		WS_VISIBLE | WS_CHILD | ES_CENTER,
+		rc1.left, rc1.bottom + 20, rc1.right - rc1.left, rcWindow.bottom - rc1.bottom - 40,
+		hWnd, (HMENU)OnButtonClicked, NULL, NULL);
+	hReportButton = CreateWindowA("button", "Отчет о характеристиках",
+		WS_VISIBLE | WS_CHILD | ES_CENTER,
+		rc2.left, rc2.bottom + 20, rc2.right - rc2.left, rcWindow.bottom - rc2.bottom - 40,
+		hWnd, (HMENU)OnReportButtonClicked, NULL, NULL);
 }
 
+void InitializeRects(HWND hWnd) {
+	GetClientRect(hWnd, &rcWindow);
+
+	rc1 = rc2 = rcWindow;
+
+	rc1.right -= (rcWindow.right - rcWindow.left) / 2;
+	rc1.bottom = 2 * rcWindow.bottom / 3;
+
+	rc2.left = rc1.right;
+	rc2.bottom = rc1.bottom;
+	// Optionally, deflate each of the rectangles by an arbitrary amount so that
+	// they don't butt up right next to each other and we can distinguish them.
+	InflateRect(&rc1, -5, -5);
+	InflateRect(&rc2, -5, -5);
+
+
+	rc1.top += 100;
+	rc2.top += 100;
+}
 
 void SetOpenFileParams(HWND hWnd) {
 	ZeroMemory(&ofn, sizeof(ofn));
@@ -180,7 +240,7 @@ void SetOpenFileParams(HWND hWnd) {
 	ofn.hwndOwner = hWnd;
 	ofn.lpstrFile = filename;
 	ofn.nMaxFile = sizeof(filename);
-	ofn.lpstrFilter = "*.txt"; // TODO: to be able to read .csv
+	ofn.lpstrFilter = "*.txt";
 	ofn.lpstrFileTitle = NULL;
 	ofn.nMaxFileTitle = 0;
 	ofn.lpstrInitialDir = NULL;
@@ -200,7 +260,7 @@ void LoadDoublesData(LPCSTR path, vector<double>* data) {
 	DWORD bytesIterated;
 	ReadFile(FileToLoad, buffer, TextBufferSize, &bytesIterated, NULL);
 
-	for (int i = 0; i <= bytesIterated; i++) {
+	for (int i = 0; i < bytesIterated; i++) {
 		int j = i;
 		char numInStr[100] = { 0 };
 		for (; i <= bytesIterated && buffer[i] != '\r'; i++) {
@@ -214,7 +274,9 @@ void LoadDoublesData(LPCSTR path, vector<double>* data) {
 			data->push_back(num);
 		}
 	}
-
+	//if (data->size() <= 1) {
+	//	throw "Ошибка выборки";
+	//}
 	CloseHandle(FileToLoad);
 }
 
@@ -250,26 +312,6 @@ void PaintGraphicsArea(HWND hWnd)
 	HBRUSH brush = CreateSolidBrush(RGB(255, 255, 255));
 	HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
 	HPEN gridPen = CreatePen(PS_SOLID, 1, RGB(220, 220, 220));
-
-	// Calculate the dimensions of the 2 equal rectangles.
-	RECT rcWindow;
-	GetClientRect(hWnd, &rcWindow);
-
-	rc1 = rc2 = rcWindow;
-
-	rc1.right -= (rcWindow.right - rcWindow.left) / 2;
-	rc1.bottom -= (rcWindow.bottom - rcWindow.top) / 2;
-	
-	rc2.left = rc1.right;
-	rc2.bottom = rc1.bottom;
-
-	// Optionally, deflate each of the rectangles by an arbitrary amount so that
-	// they don't butt up right next to each other and we can distinguish them.
-	InflateRect(&rc1, -5, -5);
-	InflateRect(&rc2, -5, -5);
-
-	rc1.top += 100;
-	rc2.top += 100;
 
 	// Draw (differently-colored) borders around these rectangles.
 	SetDCPenColor(hDC, RGB(0, 0, 0));    // black
@@ -310,6 +352,68 @@ void PaintGraphicsArea(HWND hWnd)
 	EndPaint(hWnd, &ps);
 }
 
+void DrawNumsOnPlane(HWND hWnd, RECT rc, double topValue) {
+	PAINTSTRUCT ps;
+	HDC hDC = BeginPaint(hWnd, &ps);
+	HPEN hpenOld = static_cast<HPEN>(SelectObject(hDC, GetStockObject(DC_PEN)));
+	HBRUSH hbrushOld = static_cast<HBRUSH>(SelectObject(hDC, GetStockObject(NULL_BRUSH)));
+	HBRUSH brush = CreateSolidBrush(RGB(255, 255, 255));
+	HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+	SetBkMode(hDC, TRANSPARENT);
+
+	int hDelta = rc.right - rc.left;
+	int vDelta = rc.bottom - rc.top;
+	std::string tempStr;
+	char tempCharArr[500];
+	//use GRID_SIZE
+	//Drawing top value
+	RECT rcTemp = rc;
+	rcTemp.left += 4 * hDelta / GRID_SIZE;
+	rcTemp.top += 3 * vDelta / GRID_SIZE;
+	rcTemp.right -= 5 * hDelta / GRID_SIZE;
+	rcTemp.bottom -= 6 * vDelta / GRID_SIZE;
+	tempStr = std::to_string(topValue);
+	for (int i = 0; i <= tempStr.length(); i++) // Use <= to copy \0
+		tempCharArr[i] = tempStr[i];
+	DrawTextA(hDC, tempCharArr, lstrlenA(tempCharArr), &rcTemp, DT_CENTER | DT_EDITCONTROL | DT_NOCLIP);
+
+	//Drawing max value
+	rcTemp = rc;
+	rcTemp.left += 17 * hDelta / (2 * GRID_SIZE);
+	rcTemp.top += 8 * vDelta / GRID_SIZE;
+	rcTemp.right -= 1 * hDelta / (2 * GRID_SIZE);
+	rcTemp.bottom -= 1 * vDelta / GRID_SIZE;
+	tempStr = std::to_string(max);
+	for (int i = 0; i <= tempStr.length(); i++) // Use <= to copy \0
+		tempCharArr[i] = tempStr[i];
+	DrawTextA(hDC, tempCharArr, lstrlenA(tempCharArr), &rcTemp, DT_CENTER | DT_EDITCONTROL | DT_NOCLIP);
+
+	//Drawing min value
+	double extremeValue = max > abs(min) ? max : abs(min);
+	double xRange = 2 * extremeValue;
+	double transformation = 1 - delta / xRange;
+
+	rcTemp = rc;
+	rcTemp.left = XToCoord(min, rc, transformation) - hDelta / (2 * GRID_SIZE);
+	rcTemp.top += 8 * vDelta / GRID_SIZE;
+	rcTemp.right = rcTemp.left + hDelta / (2 * GRID_SIZE);
+	rcTemp.bottom -= 1 * vDelta / GRID_SIZE;
+
+	tempStr = std::to_string(min);
+	for (int i = 0; i <= tempStr.length(); i++) // Use <= to copy \0
+		tempCharArr[i] = tempStr[i];
+	DrawTextA(hDC, tempCharArr, lstrlenA(tempCharArr), &rcTemp, DT_CENTER | DT_EDITCONTROL | DT_NOCLIP);
+
+
+
+	// Clean up after ourselves.
+	SelectObject(hDC, hpenOld);
+	SelectObject(hDC, hbrushOld);
+	DeleteObject(borderPen);
+	DeleteObject(brush);
+	EndPaint(hWnd, &ps);
+}
+
 vector<double> GetDistribution() {
 	int size = data.size();
 	vector<double>* result = new vector<double>(0);
@@ -318,13 +422,19 @@ vector<double> GetDistribution() {
 	delta = max - min;
 	h = delta / data.size();
 	argument = min;
-	for (int i = 0; i < size && argument <= max; argument += h)
+	/*if (delta == 0) {
+		result->push_back(1);
+		return *result;
+	}*/
+	for (int i = 0; i < size && argument < max; argument += h)
 	{
-		while (data[i] < argument)
+		while (i < size && (data[i] < argument || h == 0))
 			i++;
 		double value = (double)i / size;
 		result->push_back(value);
 	}
+	//result->push_back(1);
+	
 	return *result;
 }
 
@@ -359,12 +469,14 @@ void DrawDistribution(HWND hWnd) {
 	//Draw from -inf
 	MoveToEx(hDC, rc1.left, YToCoord(0, rc1, 1), NULL);
 	LineTo(hDC, XToCoord(min, rc1, transformation), YToCoord(0, rc1, 1));
+	//LineTo(hDC, XToCoord(min, rc1, transformation), YToCoord(distribution[0], rc1, 1));
 	//Draw middle
-	for (int i = 1; i < distribution.size(); i++) {
-		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i - 1], rc1, 1));
-		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i], rc1, 1));
+	for (int i = 0; i < distribution.size() - 1; i++) {
+		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i + 1], rc1, 1));
+		LineTo(hDC, XToCoord(min + h * (i + 1), rc1, transformation), YToCoord(distribution[i + 1], rc1, 1));
 	}
 	//Draw to +inf
+	LineTo(hDC, XToCoord(max, rc1, transformation), YToCoord(distribution[distribution.size() - 1], rc1, 1));
 	LineTo(hDC, XToCoord(max, rc1, transformation), YToCoord(1, rc1, 1));
 	LineTo(hDC, rc1.right, YToCoord(1, rc1, 1));
 
@@ -391,14 +503,21 @@ vector<double> GetDensity() {
 	delta = max - min;
 	h = delta / data.size();
 	argument = min + h;
+	/*if (delta == 0) {
+		result->push_back(1);
+		return *result;
+	}*/
+	maxDensityValue = 0;
 	for (int i = 0; i < size && argument <= max; argument += h)
 	{
 		int j = 0;
-		while (data[i] < argument) {
+		while (i < size && (data[i] <= argument || h == 0)) {
 			i++;
 			j++;
 		}
 		double value = (double)j / size;
+		if (value > maxDensityValue)
+			maxDensityValue = value;
 		result->push_back(value);
 	}
 	return *result;
@@ -428,7 +547,7 @@ void DrawDensity(HWND hWnd) {
 		magnification = 1 / max;
 
 	//Draw from -inf
-	MoveToEx(hDC, rc2.left, YToCoord(0, rc2, 20), NULL);
+	MoveToEx(hDC, rc2.left, YToCoord(0, rc2, magnification), NULL);
 	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(0, rc2, magnification));
 	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(density[0], rc2, magnification));
 	//Draw middle
@@ -437,7 +556,7 @@ void DrawDensity(HWND hWnd) {
 		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i], rc2, magnification));
 	}
 	//Draw to +inf
-	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(0, rc2, magnification));
+	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(density[density.size() - 1], rc2, magnification));
 	LineTo(hDC, rc2.right, YToCoord(0, rc2, magnification));
 
 	SelectObject(hDC, hpenOld);
@@ -477,27 +596,26 @@ BOOL WINAPI GetDispersion() {
 
 BOOL WINAPI GetMedian() {
 	mutex.lock();
-	int count = data.size();
-	double diff1 = 0.5;
-	double diff2 = 0.5;
+	int count = distribution.size();
+	double minDiff = 0.5;
+	int minDiffInd = 0;
 	for (int i = 0; i < count; i++) {
-		diff1 = abs(0.5 - distribution[i]);
-		if (diff1 > diff2) {
-			median = data[i];
-			medianRight = min;
-			for (; median > medianRight; medianRight += h);
-			medianLeft = medianRight - h;
-			break;
+		if (abs(0.5 - distribution[i]) < minDiff) {
+			minDiff = abs(0.5 - distribution[i]);
+			minDiffInd = i;
 		}
-		diff2 = diff1;
 	}
 	mutex.unlock();
+	median = data[minDiffInd];
+	medianRight = min;
+	for (; median > medianRight; medianRight += h);
+	medianLeft = medianRight - h;
 	return true;
 }
 
 BOOL WINAPI GetMode() {
 	mutex.lock();
-	int count = data.size();
+	int count = density.size();
 	double maxValue = 0;
 	int ind = 0;
 	for (int i = 1; i < count - 1; i++) {
@@ -507,6 +625,7 @@ BOOL WINAPI GetMode() {
 		}
 	}
 	mutex.unlock();
+	maxDensityValue = maxValue;
 	mode = data[ind];
 	modeRight = min;
 	for (; mode > modeRight; modeRight += h);
@@ -537,8 +656,8 @@ BOOL WINAPI GetVarCoeff() {
 }
 
 void CreateReportWin(HWND hWnd) {
-	hWndR = CreateWindowEx(0, L"ReportWindowClass", L"Отчет о характеристиках", WS_OVERLAPPEDWINDOW | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CHILD,
-		200, 300, 500, 500, hWnd, NULL, hInstance, NULL);
+	hWndR = CreateWindowEx(0, L"ReportWindowClass", L"Отчет о характеристиках", WS_OVERLAPPEDWINDOW ^ WS_THICKFRAME | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CHILD,
+		200, 100, 1000, 700, hWnd, NULL, NULL, NULL);
 
 	EnableWindow(hWndR, TRUE);
 	ShowWindow(hWndR, SW_SHOWDEFAULT);
@@ -574,9 +693,9 @@ LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		break;
 	case WM_CREATE:
 		//Edit
-		hEditControl = CreateWindowA("edit", "", WS_VISIBLE | WS_CHILD | ES_MULTILINE | WS_VSCROLL, 5, 30, 490, 200, hWnd, NULL, NULL, NULL);
+		hEditControl = CreateWindowA("edit", "", WS_VISIBLE | WS_CHILD | ES_MULTILINE | WS_VSCROLL, 20, 5, 950, 550, hWnd, NULL, NULL, NULL);
 		//Buttton
-		CreateWindowA("button", "Сохранить отчет", WS_VISIBLE | WS_CHILD | ES_CENTER, 5, 300, 200, 60, hWnd, (HMENU)OnSaveReportButtonClicked, NULL, NULL);
+		CreateWindowA("button", "Сохранить отчет", WS_VISIBLE | WS_CHILD | ES_CENTER, 20, 570, 950, 80, hWnd, (HMENU)OnSaveReportButtonClicked, NULL, NULL);
 
 		FillEdit();
 		break;
@@ -630,9 +749,11 @@ void FillEdit() {
 	str.append("\r\n\r\nКоэффициент вариации:\r\n");
 	std::string varCStr = std::to_string(variationCoeff);
 	str.append(varCStr);
-	char output[500] = {0};
-	for (int i = 0; i <= str.length(); i++)	//Use <= to add '\0'
+	char output[500] = { 0 };
+	for (int i = 0; i < str.length(); i++)
 		output[i] = str[i];
+	//HFONT hFont = CreateFontA(10, 5, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	//SendMessageA(hEditControl, WM_SETFONT,(WPARAM) hFont, 0);
 	SetWindowTextA(hEditControl, output);
 }
 
@@ -656,4 +777,11 @@ void SaveData(LPCSTR path) {
 
 	CloseHandle(FileToSave);
 	delete[] data;
+}
+
+char* StdStrToCharArr(std::string str) {
+	char result[500] = { 0 };
+	for (int i = 0; i < str.length(); i++)
+		result[i] = str[i];
+	return result;
 }

@@ -121,6 +121,9 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 				catch (...) {
 					MessageBoxA(hWnd, "Не удалось открыть файл", "Ошибка", MB_OK);
 					data.clear();
+					canDrawGraphics = false;
+					dataIsClear = true;
+					InvalidateRect(hWnd, 0, true);
 					return DefWindowProc(hWnd, msg, wp, lp);
 				}
 				//do calculations for distribution and density

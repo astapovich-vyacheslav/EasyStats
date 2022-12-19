@@ -508,11 +508,13 @@ vector<double> GetDensity() {
 		return *result;
 	}*/
 	maxDensityValue = 0;
-	for (int i = 0; i < size && argument <= max; argument += h)
+	for (int i = 0; i < size && argument <= max + 0.00001; argument += h)
 	{
 		int j = 0;
-		while (i < size && (data[i] <= argument || h == 0)) {
+		while (i < size && (data[i] <= argument + 0.00001 || h == 0)) {
 			i++;
+			if (i == 98)
+				i += 0;
 			j++;
 		}
 		double value = (double)j / size;
@@ -546,17 +548,20 @@ void DrawDensity(HWND hWnd) {
 	if (max != 0)
 		magnification = 1 / max;
 
+
+
 	//Draw from -inf
 	MoveToEx(hDC, rc2.left, YToCoord(0, rc2, magnification), NULL);
 	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(0, rc2, magnification));
 	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(density[0], rc2, magnification));
 	//Draw middle
-	for (int i = 1; i < density.size(); i++) {
-		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i - 1], rc2, magnification));
-		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i], rc2, magnification));
+	for (int i = 0; i < density.size() - 1; i++) {
+		LineTo(hDC, XToCoord(min + h * (i + 1), rc2, transformation), YToCoord(density[i], rc2, magnification));
+		LineTo(hDC, XToCoord(min + h * (i + 1), rc2, transformation), YToCoord(density[i + 1], rc2, magnification));
 	}
 	//Draw to +inf
 	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(density[density.size() - 1], rc2, magnification));
+	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(0, rc2, magnification));
 	LineTo(hDC, rc2.right, YToCoord(0, rc2, magnification));
 
 	SelectObject(hDC, hpenOld);

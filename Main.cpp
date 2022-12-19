@@ -30,12 +30,16 @@ BOOL WINAPI GetExpectedValue();
 BOOL WINAPI GetDispersion();
 BOOL WINAPI GetMedian();
 BOOL WINAPI GetMode();
-void CreateReportWin();
+BOOL WINAPI GetExcess();
+BOOL WINAPI GetAssymetry();
+BOOL WINAPI GetVarCoeff();
+void CreateReportWin(HWND hWnd);
 void FillEdit();
 void SaveData(LPCSTR path);
 //vars
 bool canDrawGraphics;
 bool canDrawCoordPlane;
+bool dataIsClear;
 HWND hWndR;
 HINSTANCE hInstance;
 
@@ -51,6 +55,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR args, int ncmdsho
 	CreateWindow(L"MainWndClass", L"EasyStats", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 1200, 650, NULL, NULL, NULL, NULL);
 	canDrawGraphics = false;
 	canDrawCoordPlane = true;
+	dataIsClear = true;
 	RegisterReportWinClass();
 	while (GetMessage(&SoftwareMainMessage, NULL, NULL, NULL)) {
 		TranslateMessage(&SoftwareMainMessage);
@@ -83,11 +88,18 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 			//MessageBoxA(hWnd, "Your message here!", "Button clicked!", MB_OK);
 			if (GetOpenFileNameA(&ofn))
 			{
+				//clear data
+				if (!dataIsClear) {
+					data.clear();
+					distribution.clear();
+					density.clear();
+				}
+
 				//open file
 				try {
 					LoadDoublesData(filename, &data);
 				}
-				catch (const char* e) {
+				catch (...) {
 					MessageBoxA(hWnd, "Не удалось открыть файл", "Ошибка", MB_OK);
 					return DefWindowProc(hWnd, msg, wp, lp);
 				}
@@ -96,10 +108,10 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 				distribution = GetDistribution();
 				density = GetDensity();
 				canDrawGraphics = true;
-
-				InvalidateRect(hWnd, 0, false);
 				//redraw graphics
-
+				InvalidateRect(hWnd, 0, false);
+				//data is not clear
+				dataIsClear = false;
 			}
 			break;
 		case OnReportButtonClicked: {
@@ -109,9 +121,15 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 				std::thread getMode(GetMode);
 				getM.join();
 				getD.join();
-				getMedian.join();
 				getMode.join();
-				CreateReportWin();
+				std::thread getAssymetry(GetAssymetry);
+				std::thread getExcess(GetExcess);
+				std::thread getVarCoeff(GetVarCoeff);
+				getMedian.join();
+				getAssymetry.join();
+				getExcess.join();
+				getVarCoeff.join();
+				CreateReportWin(hWnd);
 			}
 			break;
 		default:
@@ -125,7 +143,8 @@ LRESULT CALLBACK SoftwareMainProcedure(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp
 	case WM_PAINT:
 		
 		if (canDrawGraphics) {
-			//PaintGraphicsArea(hWnd);
+			PaintGraphicsArea(hWnd);
+			InvalidateRect(hWnd, 0, false);
 			DrawDistribution(hWnd);
 			InvalidateRect(hWnd, 0, false);
 			DrawDensity(hWnd);
@@ -346,7 +365,17 @@ void DrawDistribution(HWND hWnd) {
 		LineTo(hDC, XToCoord(min + h * i, rc1, transformation), YToCoord(distribution[i], rc1, 1));
 	}
 	//Draw to +inf
+	LineTo(hDC, XToCoord(max, rc1, transformation), YToCoord(1, rc1, 1));
 	LineTo(hDC, rc1.right, YToCoord(1, rc1, 1));
+
+	/*RECT numsRect = rc1;
+	numsRect.left += (rc1.bottom - rc1.top) / GRID_SIZE;
+	numsRect.right -= (rc1.bottom - rc1.top) / GRID_SIZE;
+	std::string leftStr = std::to_string(-extremeValue);
+	char temp[50] = { 0 };
+	for (int i = 0; i++ < leftStr.length(); i++)
+		temp[i] = leftStr[i];
+	DrawText(hDC, TEXT(temp), -1, &numsRect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);*/
 
 	SelectObject(hDC, hpenOld);
 	SelectObject(hDC, hbrushOld);
@@ -444,7 +473,9 @@ BOOL WINAPI GetMedian() {
 	for (int i = 1; i < count; i++) {
 		diff1 = abs(0.5 - distribution[i]);
 		if (diff1 > diff2) {
-			median = data[i - 1];
+			medianLeft = min + h * (i - 2);
+			median = data[i];
+			medianRight = min + h * (i - 1);
 			break;
 		}
 		diff2 = diff1;
@@ -458,7 +489,7 @@ BOOL WINAPI GetMode() {
 	int count = data.size();
 	double maxValue = 0;
 	int ind = 0;
-	for (int i = 1; i < count; i++) {
+	for (int i = 1; i < count - 1; i++) {
 		if (density[i - 1] > maxValue) {
 			maxValue = density[i - 1];
 			ind = i;
@@ -466,12 +497,37 @@ BOOL WINAPI GetMode() {
 	}
 	mutex.unlock();
 	mode = data[ind];
+	modeRight = min;
+	for (; mode > modeRight; modeRight += h);
+	modeLeft = modeRight - h;
 	return true;
 }
 
-void CreateReportWin() {
+BOOL WINAPI GetExcess() {
+	mutex.lock();
+	int count = data.size();
+	double total = 0;
+	for (int i = 0; i < count; i++) {
+		double term = pow(data[i] - M, 4); //fourth central moment
+		total += term;
+	}
+	mutex.unlock();
+	excess = total / (count * pow(standartDeviation, 4)) - 3;
+	return true;
+}
+
+BOOL WINAPI GetAssymetry() {
+	assymetry = (M - mode) / standartDeviation;
+	return true;
+}
+BOOL WINAPI GetVarCoeff() {
+	variationCoeff = standartDeviation / M;
+	return true;
+}
+
+void CreateReportWin(HWND hWnd) {
 	hWndR = CreateWindowEx(0, L"ReportWindowClass", L"Отчет о характеристиках", WS_OVERLAPPEDWINDOW | WS_BORDER | WS_POPUP | WS_VISIBLE | WS_CHILD,
-		200, 300, 500, 500, NULL, NULL, hInstance, NULL);
+		200, 300, 500, 500, hWnd, NULL, hInstance, NULL);
 
 	EnableWindow(hWndR, TRUE);
 	ShowWindow(hWndR, SW_SHOWDEFAULT);
@@ -516,7 +572,7 @@ LRESULT CALLBACK ReportWinProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	case WM_PAINT:
 		break;
 	case WM_DESTROY:
-		PostQuitMessage(0);
+		//PostQuitMessage(0);
 		break;
 	default: return DefWindowProc(hWnd, msg, wp, lp);
 	}
@@ -534,12 +590,36 @@ void FillEdit() {
 	std::string SDStr = std::to_string(standartDeviation);
 	str.append(SDStr);
 	str.append("\r\n\r\nМедиана:\r\n");
-	std::string MedianStr = std::to_string(median);
-	str.append(MedianStr);
+	std::string medianStr = std::to_string(median);
+	str.append(medianStr);
+	str.append("\r\n\r\nМедианный интервал:\r\n");
+	str.append("[");
+	str.append(std::to_string(medianLeft));
+	str.append("; ");
+	str.append(std::to_string(medianRight));
+	str.append(")");
 	str.append("\r\n\r\nМода:\r\n");
-	std::string ModeStr = std::to_string(mode);
-	str.append(ModeStr);
-	char output[300] = { 0 };
+	std::string modeStr = std::to_string(mode);
+	str.append(modeStr);
+	str.append("\r\n\r\nМодальный интервал:\r\n");
+	str.append("[");
+	str.append(std::to_string(modeLeft));
+	str.append("; ");
+	str.append(std::to_string(modeRight));
+	str.append(")");
+	str.append("\r\n\r\nРазмах вариации:\r\n");
+	std::string deltaStr = std::to_string(delta);
+	str.append(deltaStr);
+	str.append("\r\n\r\nАссиметрия:\r\n");
+	std::string assymetryStr = std::to_string(assymetry);
+	str.append(assymetryStr);
+	str.append("\r\n\r\nЭксцесс:\r\n");
+	std::string excessStr = std::to_string(excess);
+	str.append(excessStr);
+	str.append("\r\n\r\nКоэффициент вариации:\r\n");
+	std::string varCStr = std::to_string(variationCoeff);
+	str.append(varCStr);
+	char output[500] = {0};
 	for (int i = 0; i <= str.length(); i++)	//Use <= to add '\0'
 		output[i] = str[i];
 	SetWindowTextA(hEditControl, output);

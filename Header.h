@@ -29,7 +29,14 @@ double M;	//Expected value
 double D;	//Dispersion
 double standartDeviation;
 double median;
+double medianLeft;
+double medianRight;
 double mode;
+double modeLeft;
+double modeRight;
+double assymetry;
+double excess;
+double variationCoeff;
 
 std::mutex mutex;
 
@@ -51,6 +58,9 @@ BOOL WINAPI GetExpectedValue();
 BOOL WINAPI GetDispersion();
 BOOL WINAPI GetMedian();
 BOOL WINAPI GetMode();
-void CreateReportWin();
+BOOL WINAPI GetExcess();
+BOOL WINAPI GetAssymetry();
+BOOL WINAPI GetVarCoeff();
+void CreateReportWin(HWND hWnd);
 void FillEdit();
 void SaveData(LPCSTR path);

@@ -391,7 +391,7 @@ vector<double> GetDensity() {
 	delta = max - min;
 	h = delta / data.size();
 	argument = min + h;
-	for (int i = 1; i < size && argument <= max; argument += h)
+	for (int i = 0; i < size && argument <= max; argument += h)
 	{
 		int j = 0;
 		while (data[i] < argument) {
@@ -418,17 +418,27 @@ void DrawDensity(HWND hWnd) {
 	double xRange = 2 * extremeValue;
 	double transformation = 1 - delta / xRange;
 
+	double max = 0;
+	for (int i = 0; i < density.size(); i++) {
+		if (density[i] > max)
+			max = density[i];
+	}
+	int magnification = 1;
+	if (max != 0)
+		magnification = 1 / max;
+
 	//Draw from -inf
 	MoveToEx(hDC, rc2.left, YToCoord(0, rc2, 20), NULL);
-	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(0, rc2, 20));
+	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(0, rc2, magnification));
+	LineTo(hDC, XToCoord(min, rc2, transformation), YToCoord(density[0], rc2, magnification));
 	//Draw middle
 	for (int i = 1; i < density.size(); i++) {
-		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i - 1], rc2, 20));
-		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i], rc2, 20));
+		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i - 1], rc2, magnification));
+		LineTo(hDC, XToCoord(min + h * i, rc2, transformation), YToCoord(density[i], rc2, magnification));
 	}
 	//Draw to +inf
-	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(0, rc2, 20));
-	LineTo(hDC, rc2.right, YToCoord(0, rc2, 20));
+	LineTo(hDC, XToCoord(min + h * density.size(), rc2, transformation), YToCoord(0, rc2, magnification));
+	LineTo(hDC, rc2.right, YToCoord(0, rc2, magnification));
 
 	SelectObject(hDC, hpenOld);
 	SelectObject(hDC, hbrushOld);
@@ -470,12 +480,13 @@ BOOL WINAPI GetMedian() {
 	int count = data.size();
 	double diff1 = 0.5;
 	double diff2 = 0.5;
-	for (int i = 1; i < count; i++) {
+	for (int i = 0; i < count; i++) {
 		diff1 = abs(0.5 - distribution[i]);
 		if (diff1 > diff2) {
-			medianLeft = min + h * (i - 2);
 			median = data[i];
-			medianRight = min + h * (i - 1);
+			medianRight = min;
+			for (; median > medianRight; medianRight += h);
+			medianLeft = medianRight - h;
 			break;
 		}
 		diff2 = diff1;
